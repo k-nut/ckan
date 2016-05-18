@@ -60,10 +60,9 @@ def _package_search(data_dict):
     return query['count'], query['results']
 
 
-def _create_atom_id(resource_path, authority_name=None, date_string=None):
+def _create_atom_id(**kwargs):
     """
     Helper method that creates an atom id for a feed or entry.
-
     An id must be unique, and must not change over time.  ie - once published,
     it represents an atom feed or entry uniquely, and forever.  See [4]:
 
@@ -75,79 +74,50 @@ def _create_atom_id(resource_path, authority_name=None, date_string=None):
         suggested that the atom:id element be stored along with the
         associated resource.
 
-    resource_path
-        The resource path that uniquely identifies the feed or element.  This
-        mustn't be something that changes over time for a given entry or feed.
-        And does not necessarily need to be resolvable.
-
-        e.g. ``"/group/933f3857-79fd-4beb-a835-c0349e31ce76"`` could represent
-        the feed of datasets belonging to the identified group.
-
-    authority_name
-        The domain name or email address of the publisher of the feed.  See [3]
-        for more details.  If ``None`` then the domain name is taken from the
-        config file.  First trying ``ckan.feeds.authority_name``, and failing
-        that, it uses ``ckan.site_url``.  Again, this should not change over
-        time.
-
-    date_string
-        A string representing a date on which the authority_name is owned by
-        the publisher of the feed.
-
-        e.g. ``"2012-03-22"``
-
-        Again, this should not change over time.
-
-        If date_string is None, then an attempt is made to read the config
-        option ``ckan.feeds.date``.  If that's not available,
-        then the date_string is not used in the generation of the atom id.
+    **kwargs
+        The arguments that are passed on to `helper.url_for`. A url is created
+        from thos.
 
     Following the methods outlined in [1], [2] and [3], this function produces
     tagURIs like:
     ``"tag:thedatahub.org,2012:/group/933f3857-79fd-4beb-a835-c0349e31ce76"``.
-
     If not enough information is provide to produce a valid tagURI, then only
-    the resource_path is used, e.g.: ::
-
+    the created url is used, e.g.: ::
         "http://thedatahub.org/group/933f3857-79fd-4beb-a835-c0349e31ce76"
-
     or
-
         "/group/933f3857-79fd-4beb-a835-c0349e31ce76"
-
     The latter of which is only used if no site_url is available.   And it
     should be noted will result in an invalid feed.
-
     [1] http://web.archive.org/web/20110514113830/http://diveintomark.org/\
     archives/2004/05/28/howto-atom-id
     [2] http://www.taguri.org/
     [3] http://tools.ietf.org/html/rfc4151#section-2.1
     [4] http://www.ietf.org/rfc/rfc4287
     """
-    if authority_name is None:
-        authority_name = config.get('ckan.feeds.authority_name', '').strip()
-        if not authority_name:
-            site_url = config.get('ckan.site_url', '').strip()
-            authority_name = urlparse.urlparse(site_url).netloc
+    authority_name = config.get('ckan.feeds.authority_name', '').strip()
+    if not authority_name:
+        site_url = config.get('ckan.site_url', '').strip()
+        authority_name = urlparse.urlparse(site_url).netloc
 
     if not authority_name:
         log.warning('No authority_name available for feed generation.  '
                     'Generated feed will be invalid.')
 
-    if date_string is None:
-        date_string = config.get('ckan.feeds.date', '')
+    date_string = config.get('ckan.feeds.date', '')
 
     if not date_string:
         log.warning('No date_string available for feed generation.  '
                     'Please set the "ckan.feeds.date" config value.')
-
         # Don't generate a tagURI without a date as it wouldn't be valid.
         # This is best we can do, and if the site_url is not set, then
         # this still results in an invalid feed.
-        site_url = config.get('ckan.site_url', '')
-        return '/'.join([site_url, resource_path])
+
+        # make sure to also include domain name and port
+        kwargs['qualified'] = True
+        return h.url_for(**kwargs)
 
     tagging_entity = ','.join([authority_name, date_string])
+    resource_path = h.url_for(**kwargs)
     return ':'.join(['tag', tagging_entity, resource_path])
 
 
@@ -188,17 +158,22 @@ class FeedController(base.BaseController):
                                   action=group_type,
                                   id=obj_dict['name'])
 
-        guid = _create_atom_id(u'/feeds/group/%s.atom' %
-                               obj_dict['name'])
-        alternate_url = self._alternate_url(params, groups=obj_dict['name'])
-        desc = u'Recently created or updated datasets on %s by group: "%s"' %\
-            (g.site_title, obj_dict['title'])
-        title = u'%s - Group: "%s"' %\
-            (g.site_title, obj_dict['title'])
+        if not is_org:
+            guid = _create_atom_id(controller='feed',
+                                   action='group',
+                                   id=obj_dict['name'])
+            alternate_url = self._alternate_url(params,
+                                                groups=obj_dict['name'])
+            desc = u'Recently created or updated datasets'
+            + ' on %s by group: "%s"' %\
+                (g.site_title, obj_dict['title'])
+            title = u'%s - Group: "%s"' %\
+                (g.site_title, obj_dict['title'])
 
         if is_org:
-            guid = _create_atom_id(u'/feeds/organization/%s.atom' %
-                                   obj_dict['name'])
+            guid = _create_atom_id(controller='feed',
+                                   action='organization',
+                                   id=obj_dict['name'])
             alternate_url = self._alternate_url(params,
                                                 organization=obj_dict['name'])
             desc = u'Recently created or  updated datasets on %s '\
@@ -254,6 +229,9 @@ class FeedController(base.BaseController):
                                   id=id)
 
         alternate_url = self._alternate_url(params, tags=id)
+        guid = _create_atom_id(id=id,
+                               action='tag',
+                               controller='feed')
 
         return self.output_feed(results,
                                 feed_title=u'%s - Tag: "%s"' %
@@ -262,8 +240,7 @@ class FeedController(base.BaseController):
                                 'updated datasets on %s by tag: "%s"' %
                                 (g.site_title, id),
                                 feed_link=alternate_url,
-                                feed_guid=_create_atom_id
-                                (u'/feeds/tag/%s.atom' % id),
+                                feed_guid=guid,
                                 feed_url=feed_url,
                                 navigation_urls=navigation_urls)
 
@@ -284,14 +261,15 @@ class FeedController(base.BaseController):
                                   action='general')
 
         alternate_url = self._alternate_url(params)
+        guid = _create_atom_id(controller='feed',
+                               action='general')
 
         return self.output_feed(results,
                                 feed_title=g.site_title,
                                 feed_description=u'Recently created or '
                                 'updated datasets on %s' % g.site_title,
                                 feed_link=alternate_url,
-                                feed_guid=_create_atom_id
-                                (u'/feeds/dataset.atom'),
+                                feed_guid=guid,
                                 feed_url=feed_url,
                                 navigation_urls=navigation_urls)
 
@@ -329,18 +307,16 @@ class FeedController(base.BaseController):
                                   controller='feed',
                                   action='custom')
 
-        atom_url = h._url_with_params('/feeds/custom.atom',
-                                      search_params.items())
-
         alternate_url = self._alternate_url(request.params)
-
         return self.output_feed(results,
                                 feed_title=u'%s - Custom query' % g.site_title,
                                 feed_description=u'Recently created or updated'
                                 ' datasets on %s. Custom query: \'%s\'' %
                                 (g.site_title, q),
                                 feed_link=alternate_url,
-                                feed_guid=_create_atom_id(atom_url),
+                                feed_guid=_create_atom_id(controller='feed',
+                                                          action='custom',
+                                                          **search_params),
                                 feed_url=feed_url,
                                 navigation_urls=navigation_urls)
 
@@ -376,7 +352,9 @@ class FeedController(base.BaseController):
                 description=pkg.get('notes', ''),
                 updated=h.date_str_to_datetime(pkg.get('metadata_modified')),
                 published=h.date_str_to_datetime(pkg.get('metadata_created')),
-                unique_id=_create_atom_id(u'/dataset/%s' % pkg['id']),
+                unique_id=_create_atom_id(controller='package',
+                                          action='read',
+                                          id=pkg['id']),
                 author_name=pkg.get('author', ''),
                 author_email=pkg.get('author_email', ''),
                 categories=[t['name'] for t in pkg.get('tags', [])],
