@@ -26,7 +26,9 @@ class MailerException(Exception):
 
 def _mail_recipient(recipient_name, recipient_email,
                     sender_name, sender_url, subject,
-                    body, headers={}):
+                    body, headers=None):
+    if headers is None:
+        headers = {}
     mail_from = config.get('smtp.mail_from')
     msg = MIMEText(body.encode('utf-8'), 'plain', 'utf-8')
     for k, v in headers.items():
@@ -87,7 +89,9 @@ def _mail_recipient(recipient_name, recipient_email,
 
 
 def mail_recipient(recipient_name, recipient_email, subject,
-                   body, headers={}):
+                   body, headers=None):
+    if headers is None:
+        headers = {}
     site_title = config.get('ckan.site_title')
     site_url = config.get('ckan.site_url')
     return _mail_recipient(recipient_name, recipient_email,
@@ -95,7 +99,9 @@ def mail_recipient(recipient_name, recipient_email, subject,
                            headers=headers)
 
 
-def mail_user(recipient, subject, body, headers={}):
+def mail_user(recipient, subject, body, headers=None):
+    if headers is None:
+        headers = {}
     if (recipient.email is None) or not len(recipient.email):
         raise MailerException(_("No recipient email address available!"))
     mail_recipient(recipient.display_name, recipient.email, subject,

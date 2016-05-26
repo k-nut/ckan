@@ -2338,12 +2338,14 @@ Not used when using the `-d` option.''')
                 isinstance(user_search_params['fq_list'], list)):
             search_data_dict['fq_list'].extend(user_search_params['fq_list'])
 
-    def _search_datasets(self, page=1, view_types=[]):
+    def _search_datasets(self, page=1, view_types=None):
         '''
         Perform a query with `package_search` and return the result
 
         Results can be paginated using the `page` parameter
         '''
+        if view_types is None:
+            view_types = []
 
         n = self._page_size
 
@@ -2379,8 +2381,10 @@ Not used when using the `-d` option.''')
 
         return query
 
-    def create_views(self, view_plugin_types=[]):
+    def create_views(self, view_plugin_types=None):
 
+        if view_plugin_types is None:
+            view_plugin_types = []
         from ckan.lib.datapreview import add_views_to_dataset_resources
 
         log = logging.getLogger(__name__)
@@ -2442,8 +2446,10 @@ Not used when using the `-d` option.''')
 
         log.info('Done')
 
-    def clear_views(self, view_plugin_types=[]):
+    def clear_views(self, view_plugin_types=None):
 
+        if view_plugin_types is None:
+            view_plugin_types = []
         log = logging.getLogger(__name__)
 
         if not self.options.assume_yes:
